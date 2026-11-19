@@ -28,7 +28,7 @@ from __future__ import annotations
 # Public Python version follows the wheel version, NOT the Rust core
 # version. The Rust core version is surfaced separately as
 # `__rust_version__` for diagnostics.
-__version__ = "2.0.0a1"
+__version__ = "2.0.0"
 
 # Re-export the compiled module's surface. The leading underscore on
 # `_native` is intentional — it marks the binding module as internal.
@@ -49,6 +49,7 @@ PoseEstimate = _native.PoseEstimate
 VitalStatus = _native.VitalStatus
 VitalEstimate = _native.VitalEstimate
 VitalReading = _native.VitalReading
+CsiVitalPreprocessor = _native.CsiVitalPreprocessor
 BreathingExtractor = _native.BreathingExtractor
 HeartRateExtractor = _native.HeartRateExtractor
 
@@ -66,6 +67,19 @@ __rust_build_tag__: str = _native.__rust_build_tag__
 
 __build_features__: list[str] = list(_native.__build_features__)
 """Feature flags the wheel was compiled with."""
+
+
+def verify_witness(data_path: str, expected: str) -> bool:
+    """ADR-117 §11.3 — re-run the v2 witness and compare against ``expected``.
+
+    Feeds ``data_path`` (``archive/v1/data/proof/sample_csi_data.json``)
+    through the Rust vitals pipeline and returns True if the SHA-256 of the
+    output matches ``expected`` (a hex digest or a path to
+    ``expected_features_v2.sha256``). See :mod:`wifi_densepose.witness`.
+    """
+    from wifi_densepose.witness import verify_witness as _verify
+
+    return _verify(data_path, expected)
 
 
 def hello() -> str:
@@ -96,10 +110,13 @@ __all__ = [
     "VitalStatus",
     "VitalEstimate",
     "VitalReading",
+    "CsiVitalPreprocessor",
     "BreathingExtractor",
     "HeartRateExtractor",
     # P3.5 — BFLD (forward-compat surface for the future Rust crate)
     "BfldKind",
     "BfldFrame",
     "BfldReport",
+    # ADR-117 §11.3 — v2 witness
+    "verify_witness",
 ]

@@ -8,6 +8,7 @@
  * - Dot-matrix mist body mass, particle trails, WiFi waves, signal field
  * - Reflective floor, settings dialog, and practical data HUD
  */
+import { withWsTicket } from '../../services/ws-ticket.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -130,7 +131,12 @@ class Observatory {
     // WebSocket for live data — always try auto-detect on startup
     this._ws = null;
     this._liveData = null;
-    this._autoDetectLive();
+    // Deferred to after the first rendered frames. Scene construction and
+    // shader compilation block the main thread for seconds under software
+    // WebGL (a VM with no GPU), and the probe's abort timeout below is
+    // wall-clock: issued from here it expires mid-response and the server
+    // is misreported as absent, dropping the UI into demo mode.
+    requestAnimationFrame(() => requestAnimationFrame(() => this._autoDetectLive()));
 
     // Input
     this._initKeyboard();
@@ -452,7 +458,7 @@ class Observatory {
         return;
       }
       const base = unique[i];
-      fetch(`${base}/health`, { signal: AbortSignal.timeout(1500) })
+      fetch(`${base}/health`, { signal: AbortSignal.timeout(10000) })
         .then(r => r.ok ? r.json() : Promise.reject())
         .then(data => {
           if (data && data.status === 'ok') {
@@ -462,7 +468,7 @@ class Observatory {
             console.log('[Observatory] Sensing server detected at', base, '→', wsUrl);
             this.settings.dataSource = 'ws';
             this.settings.wsUrl = wsUrl;
-            this._connectWS(wsUrl);
+            void this._connectWS(wsUrl);
           } else {
             tryNext(i + 1);
           }
@@ -472,10 +478,13 @@ class Observatory {
     tryNext(0);
   }
 
-  _connectWS(url) {
+  // async: `/ws/sensing` is gated (ADR-272); mint a single-use ticket first.
+  async _connectWS(url) {
     this._disconnectWS();
+    let wsUrl = url;
+    try { wsUrl = await withWsTicket(url); } catch { /* auth off or pre-ADR-272 server */ }
     try {
-      this._ws = new WebSocket(url);
+      this._ws = new WebSocket(wsUrl);
       this._ws.onopen = () => {
         console.log('[Observatory] WebSocket connected');
         this._hud.updateSourceBadge('ws', this._ws);
@@ -516,7 +525,7 @@ class Observatory {
     // Updates
     this._nebula.update(dt, elapsed);
     this._figurePool.update(data, elapsed);
-    this._scenarioProps.update(data, this._demoData.currentScenario);
+    this._scenarioProps.update(data, this.settings.dataSource === 'ws' ? null : this._demoData.currentScenario);
     this._updateDotMatrixMist(data, elapsed);
     this._updateParticleTrail(data, dt, elapsed);
     this._updateWifiWaves(elapsed);
